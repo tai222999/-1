@@ -1,0 +1,37 @@
+{
+  "1502235715424096410": {
+    "boss": "混炎",
+    "max_members": 10,
+    "leader_char": "菸酒",
+    "leader_id": "1315213347943354460",
+    "start_time": "今晚150",
+    "requirements": "",
+    "channel_id": "1502229222679380091",
+    "guild_id": "1496717572861722699",
+    "applicants": [
+      {
+        "user_id": "1315213347943354460",
+        "discord": "looooooo1",
+        "char_name": "菸酒",
+        "char_class": "123",
+        "char_level": "150",
+        "char_atk": "55510",
+        "note": "",
+        "applied_at": "2026-05-08T17:08:56.087593+08:00"
+      }
+    ],
+    "created_at": "2026-05-08T17:08:24.601330+08:00"
+  },
+  "1502237213621096601": {
+    "boss": "炎魔",
+    "max_members": 20,
+    "leader_char": "菸酒",
+    "leader_id": "1315213347943354460",
+    "start_time": "12:00",
+    "requirements": "",
+    "channel_id": "1502229222679380091",
+    "guild_id": "1496717572861722699",
+    "applicants": [],
+    "created_at": "2026-05-08T17:14:21.796353+08:00"
+  }
+}

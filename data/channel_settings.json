@@ -1,0 +1,17 @@
+{
+  "1496717572861722699": {
+    "1496717573851709662": {
+      "reset_hour": 23,
+      "reset_minute": 59,
+      "require_proof": false,
+      "min_words": 0
+    }
+  },
+  "1496106781527769248": {
+    "1496337833403748362": {
+      "reset_hour": 23,
+      "require_proof": false,
+      "min_words": 0
+    }
+  }
+}

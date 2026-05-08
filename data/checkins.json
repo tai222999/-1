@@ -1,0 +1,37 @@
+{
+  "1496717572861722699": {
+    "1315213347943354460": {
+      "display_name": "looooooo1",
+      "total": 3,
+      "streak": 1,
+      "max_streak": 1,
+      "miss": 2,
+      "miss_streak": 1,
+      "max_miss_streak": 1,
+      "last_checkin": "2026-05-07",
+      "last_miss": "2026-05-07",
+      "history": [
+        "2026-04-23",
+        "2026-05-08",
+        "2026-05-07"
+      ]
+    }
+  },
+  "1496106781527769248": {
+    "1315213347943354460": {
+      "display_name": "菸酒啦",
+      "total": 2,
+      "streak": 1,
+      "max_streak": 1,
+      "miss": 0,
+      "miss_streak": 0,
+      "max_miss_streak": 0,
+      "last_checkin": "2026-04-22",
+      "last_miss": null,
+      "history": [
+        "2026-04-23",
+        "2026-04-22"
+      ]
+    }
+  }
+}
