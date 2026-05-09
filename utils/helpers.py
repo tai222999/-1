@@ -26,9 +26,9 @@ class LeaderboardView(ui.View):
         self.author_id   = author_id
         self.page        = page
         self.total_pages = max(1, (len(entries) + LB_PAGE_SIZE - 1) // LB_PAGE_SIZE)
-        self._refresh()
+        self._update_buttons()
 
-    def _refresh(self):
+    def _update_buttons(self):
         self.prev_btn.disabled = self.page == 0
         self.next_btn.disabled = self.page >= self.total_pages - 1
 
@@ -66,11 +66,11 @@ class LeaderboardView(ui.View):
     @ui.button(label='◀ 上一頁', style=discord.ButtonStyle.secondary, row=0)
     async def prev_btn(self, interaction: discord.Interaction, button: ui.Button):
         self.page -= 1
-        self._refresh()
+        self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
 
     @ui.button(label='下一頁 ▶', style=discord.ButtonStyle.secondary, row=0)
     async def next_btn(self, interaction: discord.Interaction, button: ui.Button):
         self.page += 1
-        self._refresh()
+        self._update_buttons()
         await interaction.response.edit_message(embed=self.build_embed(), view=self)
