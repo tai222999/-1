@@ -1,6 +1,7 @@
 import discord
 from discord import app_commands, ui
 from discord.ext import commands
+import re
 
 from utils.database import _load, _save
 from utils.helpers import admin_only
@@ -16,6 +17,53 @@ def _load_drops() -> dict:
 
 def _save_drops(data: dict):
     _save(DROPS_FILE, data)
+
+_SKILLBOOK_KEYWORDS = ('技能書', '技能升級書', '技能Lv', '技能lv')
+_RECIPE_KEYWORDS    = ('製作配方', '製作法', '合成圖', '配方')
+
+def _classify_item(item: str) -> str:
+    """依關鍵字自動分類掉落物，回傳 'skillbooks' / 'recipes' / 'drops'。"""
+    for kw in _SKILLBOOK_KEYWORDS:
+        if kw in item:
+            return 'skillbooks'
+    for kw in _RECIPE_KEYWORDS:
+        if kw in item:
+            return 'recipes'
+    return 'drops'
+
+def _parse_drop_file(text: str) -> dict:
+    """解析怪物掉落文字檔。格式：LV.X怪物名稱 開頭，之後每行一個掉落物。"""
+    monsters = {}
+    current_name  = None
+    current_level = '?'
+    current_items = {'drops': [], 'skillbooks': [], 'recipes': []}
+
+    def _flush():
+        if current_name and any(current_items.values()):
+            monsters[current_name] = {
+                'name':       current_name,
+                'level':      current_level,
+                'drops':      sorted(set(current_items['drops'])),
+                'skillbooks': sorted(set(current_items['skillbooks'])),
+                'recipes':    sorted(set(current_items['recipes'])),
+            }
+
+    for raw_line in text.splitlines():
+        line = raw_line.strip()
+        if not line:
+            continue
+        m = re.match(r'^LV\.(\d+)\s*(.+)$', line, re.IGNORECASE)
+        if m:
+            _flush()
+            current_level = m.group(1)
+            current_name  = m.group(2).strip()
+            current_items = {'drops': [], 'skillbooks': [], 'recipes': []}
+        elif current_name:
+            category = _classify_item(line)
+            current_items[category].append(line)
+
+    _flush()
+    return monsters
 
 def _parse_items(raw: str) -> list:
     if not raw or not raw.strip():
@@ -409,6 +457,70 @@ class DropsCog(commands.Cog):
         _save_drops(data)
         await interaction.response.send_message(
             f'✅ 已刪除怪物「**{key}**」的所有掉落資料。', ephemeral=True)
+
+    @app_commands.command(name='批量匯入掉落', description='上傳 .txt 文字檔批量匯入怪物掉落資料（僅限管理員）')
+    @app_commands.describe(檔案='格式：LV.X怪物名稱 開頭，之後每行一個掉落物')
+    @admin_only()
+    async def bulk_import(self, interaction: discord.Interaction, 檔案: discord.Attachment):
+        if not 檔案.filename.lower().endswith('.txt'):
+            await interaction.response.send_message('❌ 請上傳 .txt 格式的文字檔！', ephemeral=True)
+            return
+
+        await interaction.response.defer(ephemeral=True)
+
+        raw_bytes = await 檔案.read()
+
+        # 自動偵測編碼（支援 UTF-8、Big5、GBK 等）
+        text = None
+        used_enc = ''
+        for enc in ('utf-8-sig', 'utf-8', 'big5', 'cp950', 'gbk', 'latin-1'):
+            try:
+                text = raw_bytes.decode(enc)
+                used_enc = enc
+                break
+            except (UnicodeDecodeError, LookupError):
+                continue
+
+        if text is None:
+            await interaction.followup.send(
+                '❌ 無法識別檔案編碼，請將檔案另存為 **UTF-8** 格式後再試。', ephemeral=True)
+            return
+
+        monsters = _parse_drop_file(text)
+        if not monsters:
+            await interaction.followup.send(
+                '❌ 未找到任何怪物資料。\n'
+                '請確認格式：每個怪物以 `LV.X怪物名稱` 開頭，之後每行一個掉落物。',
+                ephemeral=True)
+            return
+
+        data   = _load_drops()
+        added  = 0
+        updated = 0
+        skipped_names = []
+
+        for name, monster in monsters.items():
+            if not name.strip():
+                continue
+            if name in data['monsters']:
+                ex = data['monsters'][name]
+                old_d = set(ex.get('drops', []))
+                new_d = set(monster['drops'])
+                ex['drops'] = sorted(old_d | new_d)
+                ex['level'] = monster['level']
+                updated += 1
+            else:
+                data['monsters'][name] = monster
+                added += 1
+
+        _save_drops(data)
+
+        embed = discord.Embed(title='✅ 批量匯入完成', color=0x57F287)
+        embed.add_field(name='➕ 新增怪物', value=f'**{added}** 隻',  inline=True)
+        embed.add_field(name='🔄 更新怪物', value=f'**{updated}** 隻', inline=True)
+        embed.add_field(name='📊 資料庫總計', value=f'**{len(data["monsters"])}** 隻', inline=True)
+        embed.set_footer(text=f'編碼：{used_enc} ｜ 來源：{檔案.filename}')
+        await interaction.followup.send(embed=embed, ephemeral=True)
 
 
 async def setup(bot: commands.Bot):
