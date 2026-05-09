@@ -43,6 +43,10 @@ async def load_extensions():
         'commands.user.lottery',
         'commands.user.raid',
         'commands.user.donation',
+        'commands.admin.announcement',
+        'commands.user.party',
+        'commands.user.drops',
+        'commands.user.checkin_lottery',
     ]
     for ext in extensions:
         try:

@@ -348,3 +348,76 @@ class Database:
         if member.guild_permissions.administrator:
             return True
         return self.is_bot_admin(guild_id, member.id)
+
+    # ─── 簽到幣 & 抽獎卷 ─────────────────────────────────────────
+    def get_user_wallet(self, guild_id, user_id) -> dict:
+        data = _load('coins.json')
+        default = {'coins': 0, 'weekly_tickets': 0, 'monthly_tickets': 0}
+        return data.get(str(guild_id), {}).get(str(user_id), dict(default))
+
+    def save_user_wallet(self, guild_id, user_id, wallet: dict):
+        data = _load('coins.json')
+        gid, uid = str(guild_id), str(user_id)
+        data.setdefault(gid, {})[uid] = wallet
+        _save('coins.json', data)
+
+    def add_coins(self, guild_id, user_id, amount: int) -> int:
+        """新增簽到幣，回傳新餘額。"""
+        wallet = self.get_user_wallet(guild_id, user_id)
+        wallet['coins'] = max(0, wallet.get('coins', 0) + amount)
+        self.save_user_wallet(guild_id, user_id, wallet)
+        return wallet['coins']
+
+    def exchange_tickets(self, guild_id, user_id, ticket_type: str, cost: int):
+        """兌換抽獎卷。回傳 (是否成功, 更新後的 wallet)。"""
+        wallet = self.get_user_wallet(guild_id, user_id)
+        if wallet.get('coins', 0) < cost:
+            return False, wallet
+        wallet['coins'] -= cost
+        key = f'{ticket_type}_tickets'
+        wallet[key] = wallet.get(key, 0) + 1
+        self.save_user_wallet(guild_id, user_id, wallet)
+        return True, wallet
+
+    def use_ticket(self, guild_id, user_id, ticket_type: str):
+        """消耗一張抽獎卷。回傳 (是否成功, 更新後的 wallet)。"""
+        wallet = self.get_user_wallet(guild_id, user_id)
+        key = f'{ticket_type}_tickets'
+        if wallet.get(key, 0) <= 0:
+            return False, wallet
+        wallet[key] -= 1
+        self.save_user_wallet(guild_id, user_id, wallet)
+        return True, wallet
+
+    def adjust_tickets(self, guild_id, user_id, ticket_type: str, delta: int) -> int:
+        """管理員增減抽獎卷，回傳新張數。"""
+        wallet = self.get_user_wallet(guild_id, user_id)
+        key = f'{ticket_type}_tickets'
+        wallet[key] = max(0, wallet.get(key, 0) + delta)
+        self.save_user_wallet(guild_id, user_id, wallet)
+        return wallet[key]
+
+    def batch_adjust_tickets(self, guild_id, user_ids: list, ticket_type: str, delta: int):
+        """批量增減多位成員的抽獎卷（一次讀寫，效率高）。"""
+        data = _load('coins.json')
+        gid  = str(guild_id)
+        key  = f'{ticket_type}_tickets'
+        data.setdefault(gid, {})
+        for uid in user_ids:
+            s = str(uid)
+            w = data[gid].get(s, {'coins': 0, 'weekly_tickets': 0, 'monthly_tickets': 0})
+            w[key] = max(0, w.get(key, 0) + delta)
+            data[gid][s] = w
+        _save('coins.json', data)
+
+    def batch_adjust_coins(self, guild_id, user_ids: list, delta: int):
+        """批量增減多位成員的簽到幣（一次讀寫，效率高）。"""
+        data = _load('coins.json')
+        gid  = str(guild_id)
+        data.setdefault(gid, {})
+        for uid in user_ids:
+            s = str(uid)
+            w = data[gid].get(s, {'coins': 0, 'weekly_tickets': 0, 'monthly_tickets': 0})
+            w['coins'] = max(0, w.get('coins', 0) + delta)
+            data[gid][s] = w
+        _save('coins.json', data)

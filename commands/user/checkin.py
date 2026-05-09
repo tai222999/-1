@@ -94,6 +94,9 @@ class CheckIn(commands.Cog):
         db.save_user_checkin(guild_id, user.id, user_data)
         db.add_today_checkin(guild_id, channel_id, user.id, today_str)
 
+        # 發放簽到幣
+        new_coins = db.add_coins(guild_id, user.id, 1)
+
         streak = user_data['streak']
         total  = user_data['total']
 
@@ -108,7 +111,8 @@ class CheckIn(commands.Cog):
         embed.description = (
             f'📅 日期：**{today_str}**\n'
             f'📊 總簽到：**{total}** 次\n'
-            f'{streak_emoji} 連續簽到：**{streak}** 天'
+            f'{streak_emoji} 連續簽到：**{streak}** 天\n'
+            f'💰 獲得 1 枚簽到幣（共 **{new_coins}** 枚）'
         )
         if 訊息:
             embed.description += f'\n\n💬 留言：{訊息}'
