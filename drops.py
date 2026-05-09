@@ -18,21 +18,34 @@ def _load_drops() -> dict:
 def _save_drops(data: dict):
     _save(DROPS_FILE, data)
 
+_SKILLBOOK_KEYWORDS = ('技能書', '技能升級書', '技能Lv', '技能lv')
+_RECIPE_KEYWORDS    = ('製作配方', '製作法', '合成圖', '配方')
+
+def _classify_item(item: str) -> str:
+    """依關鍵字自動分類掉落物，回傳 'skillbooks' / 'recipes' / 'drops'。"""
+    for kw in _SKILLBOOK_KEYWORDS:
+        if kw in item:
+            return 'skillbooks'
+    for kw in _RECIPE_KEYWORDS:
+        if kw in item:
+            return 'recipes'
+    return 'drops'
+
 def _parse_drop_file(text: str) -> dict:
     """解析怪物掉落文字檔。格式：LV.X怪物名稱 開頭，之後每行一個掉落物。"""
     monsters: dict = {}
     current_name:  str | None = None
     current_level: str = '?'
-    current_drops: list = []
+    current_items: dict = {'drops': [], 'skillbooks': [], 'recipes': []}
 
     def _flush():
-        if current_name and current_drops:
+        if current_name and any(current_items.values()):
             monsters[current_name] = {
                 'name':       current_name,
                 'level':      current_level,
-                'drops':      sorted(set(current_drops)),
-                'skillbooks': [],
-                'recipes':    [],
+                'drops':      sorted(set(current_items['drops'])),
+                'skillbooks': sorted(set(current_items['skillbooks'])),
+                'recipes':    sorted(set(current_items['recipes'])),
             }
 
     for raw_line in text.splitlines():
@@ -44,9 +57,10 @@ def _parse_drop_file(text: str) -> dict:
             _flush()
             current_level = m.group(1)
             current_name  = m.group(2).strip()
-            current_drops = []
+            current_items = {'drops': [], 'skillbooks': [], 'recipes': []}
         elif current_name:
-            current_drops.append(line)
+            category = _classify_item(line)
+            current_items[category].append(line)
 
     _flush()
     return monsters
