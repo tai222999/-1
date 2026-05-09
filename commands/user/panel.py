@@ -2,7 +2,7 @@ import discord
 from discord import app_commands, ui
 from discord.ext import commands
 from datetime import datetime
-from utils.helpers import admin_only
+from utils.helpers import admin_only, LeaderboardView, LB_PAGE_SIZE
 
 PANEL_DESC = (
     '歡迎使用簽到系統！點擊下方按鈕進行操作：\n\n'
@@ -24,18 +24,6 @@ def _streak_emoji(streak: int) -> str:
     return ''
 
 
-def _build_leaderboard_embed(title, color, entries):
-    embed = discord.Embed(title=title, color=color)
-    if not entries:
-        embed.description = '目前沒有任何資料。'
-    else:
-        medals = {1: '🥇', 2: '🥈', 3: '🥉'}
-        lines = [
-            f"{medals.get(i, f'`{i:>2}.`')} **{name}** — {value}"
-            for i, (name, value) in enumerate(entries, 1)
-        ]
-        embed.description = '\n'.join(lines)
-    return embed
 
 
 # ── 兌換視圖（ephemeral，非持久化）────────────────────────────────
@@ -195,10 +183,14 @@ class CheckInView(discord.ui.View):
         sorted_users = sorted(active.items(), key=lambda x: x[1].get('total', 0), reverse=True)
         entries = [
             (db.get_display_name(guild_id, uid), f"**{d.get('total', 0)}** 次")
-            for uid, d in sorted_users[:50]
+            for uid, d in sorted_users
         ]
-        embed = _build_leaderboard_embed('📊 簽到排行榜（前 50 名）', 0x57F287, entries)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        view  = LeaderboardView(entries, '📊 簽到排行榜', 0x57F287, interaction.user.id)
+        embed = view.build_embed()
+        if view.total_pages > 1:
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ── 🔥 連續簽到排行 ──────────────────────────────────────────
     @discord.ui.button(
@@ -222,12 +214,16 @@ class CheckInView(discord.ui.View):
         entries = [
             (
                 db.get_display_name(guild_id, uid),
-                f"連續 **{d.get('streak', 0)}** 天（最高 {d.get('max_streak', 0)} 天）"
+                f"連續 **{d.get('streak', 0)}** 天（最高 {d.get('max_streak', 0)} 天）",
             )
-            for uid, d in sorted_users[:50]
+            for uid, d in sorted_users
         ]
-        embed = _build_leaderboard_embed('🔥 連續簽到排行榜（前 50 名）', 0xF1C40F, entries)
-        await interaction.followup.send(embed=embed, ephemeral=True)
+        view  = LeaderboardView(entries, '🔥 連續簽到排行榜', 0xF1C40F, interaction.user.id)
+        embed = view.build_embed()
+        if view.total_pages > 1:
+            await interaction.followup.send(embed=embed, view=view, ephemeral=True)
+        else:
+            await interaction.followup.send(embed=embed, ephemeral=True)
 
     # ── 💰 查詢簽到幣 ────────────────────────────────────────────
     @discord.ui.button(

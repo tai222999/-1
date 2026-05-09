@@ -383,6 +383,61 @@ class RecipeQueryModal(ui.Modal, title='🔧 製作配方查詢'):
         await _handle_item_query(interaction, self.item.value, 'recipes', '🔧 製作配方')
 
 
+# ── 目前錄入怪物分頁清單 ──────────────────────────────────────────
+
+MONSTERS_PER_PAGE = 15
+
+
+class MonsterListView(ui.View):
+    def __init__(self, monsters: list, author_id: int, page: int = 0):
+        super().__init__(timeout=120)
+        self.monsters    = monsters
+        self.author_id   = author_id
+        self.page        = page
+        self.total_pages = max(1, (len(monsters) + MONSTERS_PER_PAGE - 1) // MONSTERS_PER_PAGE)
+        self._refresh()
+
+    def _refresh(self):
+        self.prev_btn.disabled = self.page == 0
+        self.next_btn.disabled = self.page >= self.total_pages - 1
+
+    def build_embed(self) -> discord.Embed:
+        start         = self.page * MONSTERS_PER_PAGE
+        page_monsters = self.monsters[start:start + MONSTERS_PER_PAGE]
+
+        embed = discord.Embed(
+            title = f'📋 目前錄入怪物（共 {len(self.monsters)} 隻）',
+            color = 0xE74C3C,
+        )
+        lines = []
+        for i, m in enumerate(page_monsters):
+            total = (len(m.get('drops', [])) + len(m.get('skillbooks', []))
+                     + len(m.get('recipes', [])))
+            lines.append(f'`{start + i + 1:>3}.` **{m["name"]}** Lv.{m["level"]} — {total} 筆掉落')
+        embed.description = '\n'.join(lines) if lines else '尚無任何怪物資料。'
+        embed.set_footer(text=f'第 {self.page + 1} / {self.total_pages} 頁')
+        return embed
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user.id != self.author_id:
+            await interaction.response.send_message(
+                '❌ 只有發出查詢的成員才能翻頁。', ephemeral=True)
+            return False
+        return True
+
+    @ui.button(label='◀ 上一頁', style=discord.ButtonStyle.secondary, row=0)
+    async def prev_btn(self, interaction: discord.Interaction, button: ui.Button):
+        self.page -= 1
+        self._refresh()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+    @ui.button(label='下一頁 ▶', style=discord.ButtonStyle.secondary, row=0)
+    async def next_btn(self, interaction: discord.Interaction, button: ui.Button):
+        self.page += 1
+        self._refresh()
+        await interaction.response.edit_message(embed=self.build_embed(), view=self)
+
+
 # ── 主控面板（持久化）────────────────────────────────────────────
 
 class DropPanelView(ui.View):
@@ -417,6 +472,19 @@ class DropPanelView(ui.View):
     async def recipe_btn(self, interaction: discord.Interaction, button: ui.Button):
         await interaction.response.send_modal(RecipeQueryModal())
 
+    @ui.button(label='📋 目前錄入怪物', style=discord.ButtonStyle.secondary,
+               custom_id='drop_monster_list_btn', row=2)
+    async def list_monsters_btn(self, interaction: discord.Interaction, button: ui.Button):
+        data     = _load_drops()
+        monsters = sorted(data['monsters'].values(), key=lambda m: m['name'])
+        if not monsters:
+            await interaction.response.send_message(
+                '📭 目前尚未錄入任何怪物資料。', ephemeral=True)
+            return
+        view = MonsterListView(monsters, interaction.user.id)
+        await interaction.response.send_message(
+            embed=view.build_embed(), view=view, ephemeral=True)
+
 
 # ── Cog ──────────────────────────────────────────────────────────
 
@@ -436,7 +504,8 @@ class DropsCog(commands.Cog):
                 '**🐉 怪物掉落查詢** — 輸入怪物名稱，查看所有掉落物\n'
                 '**💎 掉落物查詢** — 輸入物品名稱，查哪些怪物會掉落\n'
                 '**📖 技能書查詢** — 輸入技能書名稱，查掉落來源\n'
-                '**🔧 製作配方查詢** — 輸入配方名稱，查掉落來源\n\n'
+                '**🔧 製作配方查詢** — 輸入配方名稱，查掉落來源\n'
+                '**📋 目前錄入怪物** — 瀏覽資料庫中所有已錄入的怪物清單\n\n'
                 '*所有查詢皆支援部分名稱搜尋*'
             ),
             color = 0x9B59B6,
