@@ -181,12 +181,12 @@ def _parse_date(raw: str) -> datetime | None:
 
 
 def _is_recent(date_str: str) -> bool:
-    """判斷日期是否在 MAX_AGE_DAYS 天內；無日期視為近期。"""
+    """判斷日期是否在 MAX_AGE_DAYS 天內；無日期或無法解析一律排除。"""
     if not date_str:
-        return True   # 沒有日期資訊的一律視為近期
+        return False
     dt = _parse_date(date_str)
     if dt is None:
-        return True
+        return False
     return datetime.now(timezone.utc) - dt <= timedelta(days=MAX_AGE_DAYS)
 
 
@@ -502,11 +502,11 @@ class MapleNews(commands.Cog):
             def _should_post(a: dict) -> bool:
                 if a['url'] in posted:
                     return False                       # 已發布過
-                if last_dt is None:
-                    return True                        # 從未發布過，全部納入
                 art_dt = _parse_date(a.get('date', ''))
                 if art_dt is None:
-                    return True                        # 無日期資訊，納入
+                    return False                       # 無法確認日期，一律跳過
+                if last_dt is None:
+                    return True                        # 從未發布過，發布所有有日期的近期文章
                 return art_dt > last_dt               # 僅發布比上次更新的
 
             new_arts = [a for a in recent if _should_post(a)]
