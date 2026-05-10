@@ -259,9 +259,9 @@ def _extract_title_from_html(html: str, fallback: str = '') -> tuple[str, str]:
 async def _get_article_meta(session: aiohttp.ClientSession,
                             meta: dict) -> dict:
     """
-    確保文章有標題。若標題為空，抓取個別頁面取得。
+    確保文章有標題與日期。若任一缺失，抓取個別頁面補全。
     """
-    if meta.get('title'):
+    if meta.get('title') and meta.get('date'):
         return meta
 
     html = await _fetch(session, meta['url'], delay=0.8)
@@ -271,7 +271,7 @@ async def _get_article_meta(session: aiohttp.ClientSession,
     title, date = _extract_title_from_html(html)
     return {
         'url':   meta['url'],
-        'title': title or '楓星公告',
+        'title': meta.get('title') or title or '楓星公告',
         'date':  meta.get('date') or date,
     }
 
@@ -494,6 +494,18 @@ class MapleNews(commands.Cog):
 
         async with aiohttp.ClientSession() as session:
             all_arts = await _collect_all_articles(session)
+
+            # 為「未發布且無日期」的候選文章嘗試補全日期（最多 8 篇）
+            undated_new = [
+                a for a in all_arts
+                if not a.get('date') and a['url'] not in posted
+            ]
+            for art in undated_new[:8]:
+                html = await _fetch(session, art['url'], delay=0.5)
+                if html:
+                    _, date = _extract_title_from_html(html)
+                    if date:
+                        art['date'] = date
 
             # ① 只看最近 MAX_AGE_DAYS 天內的文章
             recent = [a for a in all_arts if _is_recent(a.get('date', ''))]
