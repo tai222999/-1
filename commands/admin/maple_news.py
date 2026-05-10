@@ -462,11 +462,17 @@ def _save_log(posted: set, last_dt: datetime | None):
 
 # ── Embed 排版 ────────────────────────────────────────────────────
 
+_TW_TZ = timezone(timedelta(hours=8))
+
 def _format_embed(meta: dict, url: str) -> discord.Embed:
     title = (meta.get('title') or '楓星公告').strip()
     date  = (meta.get('date') or '').strip()
-    # 日期格式化：去掉毫秒與時區後綴，只保留 YYYY-MM-DD HH:MM
-    date = re.sub(r'T(\d{2}:\d{2}).*', r' \1', date)
+    if date:
+        dt = _parse_date(date)
+        if dt:
+            date = dt.astimezone(_TW_TZ).strftime('%Y-%m-%d %H:%M')
+        else:
+            date = re.sub(r'T(\d{2}:\d{2}).*', r' \1', date)
     embed = discord.Embed(title=f'📢 {title}', color=0xF1A120, url=url)
     footer = f'發布時間：{date} ｜ 來源：楓星官網' if date else '來源：楓星官網'
     embed.set_footer(text=footer)
