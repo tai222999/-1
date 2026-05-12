@@ -28,7 +28,7 @@ def _save_leaves(data: dict):
 def _leave_embed(record: dict, user: discord.Member) -> discord.Embed:
     embed = discord.Embed(title='🏖️ 請假通知', color=0xE67E22)
     embed.set_author(name=user.display_name, icon_url=user.display_avatar.url)
-    embed.add_field(name='場次',         value=record['session'],    inline=True)
+    embed.add_field(name='目前所在公會',  value=record['session'],    inline=True)
     embed.add_field(name='遊戲暱稱',     value=record['nickname'],   inline=True)
     embed.add_field(name='MapleWordsID', value=record['maple_id'],   inline=True)
     embed.add_field(name='請假日期',     value=record['leave_date'], inline=True)
@@ -41,9 +41,9 @@ def _leave_embed(record: dict, user: discord.Member) -> discord.Embed:
 
 class LeaveModal(ui.Modal, title='📝 請假申請'):
     session = ui.TextInput(
-        label='場次',
-        placeholder='請輸入：一會 或 二會',
-        required=True, max_length=10,
+        label='目前所在公會',
+        placeholder='請輸入你目前所在的公會名稱',
+        required=True, max_length=30,
     )
     nickname = ui.TextInput(
         label='遊戲暱稱',
