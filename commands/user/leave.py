@@ -42,7 +42,7 @@ def _leave_embed(record: dict, user: discord.Member) -> discord.Embed:
 class LeaveModal(ui.Modal, title='📝 請假申請'):
     session = ui.TextInput(
         label='目前所在公會',
-        placeholder='請輸入你目前所在的公會名稱',
+        placeholder='一會/二會',
         required=True, max_length=30,
     )
     nickname = ui.TextInput(
