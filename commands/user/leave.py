@@ -52,7 +52,7 @@ class LeaveModal(ui.Modal, title='📝 請假申請'):
     )
     maple_id = ui.TextInput(
         label='MapleWordsID',
-        placeholder='例如：MapleWords#1234',
+        placeholder='MapleWords 必填！！！',
         required=True, max_length=50,
     )
     leave_date = ui.TextInput(
