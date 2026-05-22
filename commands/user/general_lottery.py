@@ -203,7 +203,10 @@ class GeneralLotteryView(ui.View):
         result_embed.set_footer(text=f'由 {interaction.user.display_name} 主持抽獎')
 
         await msg.edit(embed=result_embed)
-        await channel.send('🎉 恭喜中獎！' + ' '.join(f'<@{uid}>' for uid in winner_ids))
+        await channel.send(
+            '🎉 恭喜 ' + ' '.join(f'<@{uid}>' for uid in winner_ids)
+            + f' 抽中了「{lottery["prize"]}」！🎁'
+        )
         await interaction.followup.send('✅ 抽獎完成！', ephemeral=True)
 
     @ui.button(label='🔒 關閉抽獎', style=discord.ButtonStyle.secondary,
