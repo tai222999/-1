@@ -49,6 +49,7 @@ async def load_extensions():
         'commands.user.checkin_lottery',
         'commands.user.general_lottery',
         'commands.user.leave',
+        'commands.admin.welcome',
     ]
     for ext in extensions:
         try:
