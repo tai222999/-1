@@ -105,6 +105,108 @@ async def _do_send(channel: discord.TextChannel, ann: dict, guild: discord.Guild
         return False
 
 
+# ── 公會公告表單（自由指定頻道、純文字、支援長內容）────────────────
+
+class GuildNoticeModal(ui.Modal, title='📋 發布公會公告'):
+    def __init__(self, channel: discord.TextChannel):
+        super().__init__()
+        self._channel = channel
+
+    ann_title = ui.TextInput(
+        label       = '公告標題',
+        placeholder = '例如：公會規範 / 本週活動通知',
+        required    = True, max_length=100,
+    )
+    content = ui.TextInput(
+        label       = '公告內容（支援 Discord markdown 語法）',
+        style       = discord.TextStyle.paragraph,
+        placeholder = (
+            '可使用以下語法：\n'
+            '**粗體**  *斜體*  __底線__  ~~刪除線~~\n'
+            '> 引用區塊\n'
+            '# 大標題  ## 中標題\n'
+            '- 項目  1. 編號清單\n'
+            '`程式碼`  ```程式碼區塊```'
+        ),
+        required    = True, max_length=4000,
+    )
+    mention = ui.TextInput(
+        label       = '標記（選填）',
+        placeholder = 'everyone  /  身份組名稱  /  留空不標記',
+        required    = False, max_length=100,
+    )
+
+    async def on_error(self, interaction: discord.Interaction, error: Exception):
+        import traceback
+        traceback.print_exc()
+        try:
+            await interaction.response.send_message(f'❌ 發生錯誤：{error}', ephemeral=True)
+        except Exception:
+            pass
+
+    async def on_submit(self, interaction: discord.Interaction):
+        mention_str = ''
+        allowed     = discord.AllowedMentions.none()
+        mention_input = self.mention.value.strip()
+
+        if mention_input.lower() in ('everyone', '@everyone'):
+            mention_str = '@everyone'
+            allowed     = discord.AllowedMentions(everyone=True)
+        elif mention_input:
+            role = discord.utils.find(lambda r: r.name == mention_input, interaction.guild.roles)
+            if not role:
+                await interaction.response.send_message(
+                    f'❌ 找不到身份組「{mention_input}」，請確認名稱正確。', ephemeral=True)
+                return
+            mention_str = role.mention
+            allowed     = discord.AllowedMentions(roles=[role])
+
+        title   = self.ann_title.value.strip()
+        content = self.content.value
+
+        # 內容超過 4096 字時拆成多則訊息
+        chunks = []
+        if len(content) <= 4096:
+            chunks.append(content)
+        else:
+            lines, buf = content.split('\n'), ''
+            for line in lines:
+                if len(buf) + len(line) + 1 > 4096:
+                    chunks.append(buf.rstrip('\n'))
+                    buf = ''
+                buf += line + '\n'
+            if buf.strip():
+                chunks.append(buf.rstrip('\n'))
+
+        try:
+            for i, chunk in enumerate(chunks):
+                embed = discord.Embed(
+                    title       = f'📋  {title}' if i == 0 else None,
+                    description = chunk,
+                    color       = 0x5865F2,
+                    timestamp   = tw_now(),
+                )
+                if i == 0:
+                    embed.set_author(
+                        name    = interaction.user.display_name,
+                        icon_url= interaction.user.display_avatar.url,
+                    )
+                if i == len(chunks) - 1 and mention_str:
+                    await self._channel.send(
+                        content          = mention_str,
+                        embed            = embed,
+                        allowed_mentions = allowed,
+                    )
+                else:
+                    await self._channel.send(embed=embed)
+
+            await interaction.response.send_message(
+                f'✅ 公告已發布到 {self._channel.mention}！', ephemeral=True)
+        except discord.Forbidden:
+            await interaction.response.send_message(
+                '❌ 機器人沒有在該頻道發送訊息的權限。', ephemeral=True)
+
+
 # ── 公告表單 ──────────────────────────────────────────────────────
 
 class AnnouncementModal(ui.Modal, title='📢 建立公告'):
@@ -410,6 +512,13 @@ class AnnouncementCog(commands.Cog):
             color = 0x5865F2,
         )
         await interaction.response.send_message(embed=embed, view=AnnouncementPanelView())
+
+    # ── /公會公告 ────────────────────────────────────────────────
+    @app_commands.command(name='公會公告', description='直接指定頻道發布公會公告（由機器人發送，支援 Discord markdown）')
+    @app_commands.describe(頻道='公告要發布到哪個頻道')
+    @admin_only()
+    async def guild_notice_cmd(self, interaction: discord.Interaction, 頻道: discord.TextChannel):
+        await interaction.response.send_modal(GuildNoticeModal(channel=頻道))
 
     # ── /設定公告發布頻道 ────────────────────────────────────────
     @app_commands.command(name='設定公告發布頻道', description='設定公告內容發布的目標頻道（僅限管理員）')
