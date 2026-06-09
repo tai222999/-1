@@ -81,10 +81,16 @@ async def on_ready():
     from commands.user.panel import CheckInView
     bot.add_view(CheckInView())
 
+    # 先對每個已加入的伺服器做即時同步（立刻生效）
+    for guild in bot.guilds:
+        bot.tree.copy_global_to(guild=guild)
+        await bot.tree.sync(guild=guild)
+
+    # 再做全域同步（讓新伺服器也能使用）
     synced = await bot.tree.sync()
     print(f'✅ {bot.user} 已上線！')
     print(f'📋 Bot ID: {bot.user.id}')
-    print(f'🔄 斜線指令已同步：{len(synced)} 個（全球生效約需 1 小時，重開 Discord 可立即看到）')
+    print(f'🔄 斜線指令已同步：{len(synced)} 個指令（伺服器即時生效）')
 
 async def main():
     async with bot:
