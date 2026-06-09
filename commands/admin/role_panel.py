@@ -130,13 +130,13 @@ class RolePanel(commands.Cog):
         embed.add_field(name='面板 ID', value=f'`{panel_id}`', inline=True)
         embed.add_field(name='標題', value=標題, inline=True)
         embed.add_field(name='描述', value=描述, inline=False)
-        embed.set_footer(text=f'使用 /新增身分組按鈕 面板ID:{panel_id} 來新增按鈕')
+        embed.set_footer(text=f'使用 /新增身分組按鈕 面板id:{panel_id} 來新增按鈕')
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ── /新增身分組按鈕 ──────────────────────────────────────────
     @app_commands.command(name='新增身分組按鈕', description='新增一個按鈕到身分組面板')
     @app_commands.describe(
-        面板ID='目標面板 ID（用 /身分組面板清單 查看）',
+        面板id='目標面板 ID（用 /身分組面板清單 查看）',
         身分組='點擊按鈕後要獲得或移除的身分組',
         按鈕文字='按鈕上顯示的文字',
         表情符號='按鈕左側的表情符號（可選，例如 ⚔️）',
@@ -150,17 +150,17 @@ class RolePanel(commands.Cog):
     ])
     @admin_only()
     async def add_button(self, interaction: discord.Interaction,
-                         面板ID: str, 身分組: discord.Role, 按鈕文字: str,
+                         面板id: str, 身分組: discord.Role, 按鈕文字: str,
                          表情符號: str = None, 按鈕樣式: str = 'primary'):
         data = _load()
         gid = str(interaction.guild_id)
 
-        if gid not in data or 面板ID not in data[gid]:
+        if gid not in data or 面板id not in data[gid]:
             await interaction.response.send_message(
-                f'❌ 找不到面板 `{面板ID}`，請先使用 `/建立身分組面板`。', ephemeral=True)
+                f'❌ 找不到面板 `{面板id}`，請先使用 `/建立身分組面板`。', ephemeral=True)
             return
 
-        buttons = data[gid][面板ID].setdefault('buttons', [])
+        buttons = data[gid][面板id].setdefault('buttons', [])
 
         if len(buttons) >= 25:
             await interaction.response.send_message('❌ 一個面板最多只能有 25 個按鈕。', ephemeral=True)
@@ -180,59 +180,59 @@ class RolePanel(commands.Cog):
         _save(data)
 
         await interaction.response.send_message(
-            f'✅ 已新增按鈕 **{按鈕文字}** → **{身分組.name}** 到面板 `{面板ID}`\n'
+            f'✅ 已新增按鈕 **{按鈕文字}** → **{身分組.name}** 到面板 `{面板id}`\n'
             f'目前共 **{len(buttons)}** 個按鈕。\n'
-            f'使用 `/發送身分組面板 面板ID:{面板ID}` 來發送或更新面板。',
+            f'使用 `/發送身分組面板 面板id:{面板id}` 來發送或更新面板。',
             ephemeral=True)
 
     # ── /移除身分組按鈕 ──────────────────────────────────────────
     @app_commands.command(name='移除身分組按鈕', description='從面板中移除指定身分組的按鈕')
     @app_commands.describe(
-        面板ID='目標面板 ID',
+        面板id='目標面板 ID',
         身分組='要移除的身分組',
     )
     @admin_only()
     async def remove_button(self, interaction: discord.Interaction,
-                            面板ID: str, 身分組: discord.Role):
+                            面板id: str, 身分組: discord.Role):
         data = _load()
         gid = str(interaction.guild_id)
 
-        if gid not in data or 面板ID not in data[gid]:
-            await interaction.response.send_message(f'❌ 找不到面板 `{面板ID}`。', ephemeral=True)
+        if gid not in data or 面板id not in data[gid]:
+            await interaction.response.send_message(f'❌ 找不到面板 `{面板id}`。', ephemeral=True)
             return
 
-        panel = data[gid][面板ID]
+        panel = data[gid][面板id]
         before = len(panel.get('buttons', []))
         panel['buttons'] = [b for b in panel.get('buttons', []) if b['role_id'] != str(身分組.id)]
 
         if len(panel['buttons']) == before:
             await interaction.response.send_message(
-                f'❌ 面板 `{面板ID}` 中找不到身分組 **{身分組.name}** 的按鈕。', ephemeral=True)
+                f'❌ 面板 `{面板id}` 中找不到身分組 **{身分組.name}** 的按鈕。', ephemeral=True)
             return
 
         _save(data)
         await interaction.response.send_message(
-            f'✅ 已從面板 `{面板ID}` 移除 **{身分組.name}** 的按鈕。\n'
-            f'使用 `/發送身分組面板 面板ID:{面板ID}` 更新面板訊息。',
+            f'✅ 已從面板 `{面板id}` 移除 **{身分組.name}** 的按鈕。\n'
+            f'使用 `/發送身分組面板 面板id:{面板id}` 更新面板訊息。',
             ephemeral=True)
 
     # ── /發送身分組面板 ──────────────────────────────────────────
     @app_commands.command(name='發送身分組面板', description='將面板發送到頻道（已發送的話則更新原訊息）')
     @app_commands.describe(
-        面板ID='要發送的面板 ID',
+        面板id='要發送的面板 ID',
         頻道='目標頻道（預設為目前頻道）',
     )
     @admin_only()
     async def send_panel(self, interaction: discord.Interaction,
-                         面板ID: str, 頻道: discord.TextChannel = None):
+                         面板id: str, 頻道: discord.TextChannel = None):
         data = _load()
         gid = str(interaction.guild_id)
 
-        if gid not in data or 面板ID not in data[gid]:
-            await interaction.response.send_message(f'❌ 找不到面板 `{面板ID}`。', ephemeral=True)
+        if gid not in data or 面板id not in data[gid]:
+            await interaction.response.send_message(f'❌ 找不到面板 `{面板id}`。', ephemeral=True)
             return
 
-        panel = data[gid][面板ID]
+        panel = data[gid][面板id]
         buttons = panel.get('buttons', [])
 
         if not buttons:
@@ -272,21 +272,21 @@ class RolePanel(commands.Cog):
 
     # ── /刪除身分組面板 ──────────────────────────────────────────
     @app_commands.command(name='刪除身分組面板', description='刪除一個身分組面板設定（不刪除頻道訊息）')
-    @app_commands.describe(面板ID='要刪除的面板 ID')
+    @app_commands.describe(面板id='要刪除的面板 ID')
     @admin_only()
-    async def delete_panel(self, interaction: discord.Interaction, 面板ID: str):
+    async def delete_panel(self, interaction: discord.Interaction, 面板id: str):
         data = _load()
         gid = str(interaction.guild_id)
 
-        if gid not in data or 面板ID not in data[gid]:
-            await interaction.response.send_message(f'❌ 找不到面板 `{面板ID}`。', ephemeral=True)
+        if gid not in data or 面板id not in data[gid]:
+            await interaction.response.send_message(f'❌ 找不到面板 `{面板id}`。', ephemeral=True)
             return
 
-        panel = data[gid].pop(面板ID)
+        panel = data[gid].pop(面板id)
         _save(data)
 
         await interaction.response.send_message(
-            f'✅ 已刪除面板 `{面板ID}`（{panel.get("title", "無標題")}）。\n'
+            f'✅ 已刪除面板 `{面板id}`（{panel.get("title", "無標題")}）。\n'
             f'⚠️ 頻道中的面板訊息不會被自動刪除，但按鈕將停止運作。',
             ephemeral=True)
 
