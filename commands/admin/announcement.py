@@ -1,3 +1,4 @@
+import re
 import discord
 from discord import app_commands, ui
 from discord.ext import commands, tasks
@@ -23,6 +24,26 @@ FREQ_MAP = {
 }
 FREQ_LABEL = {v: k for k, v in FREQ_MAP.items()}
 
+WEEKDAY_MAP = {
+    '週一': 0, '周一': 0,
+    '週二': 1, '周二': 1,
+    '週三': 2, '周三': 2,
+    '週四': 3, '周四': 3,
+    '週五': 4, '周五': 4,
+    '週六': 5, '周六': 5,
+    '週日': 6, '周日': 6, '週天': 6, '周天': 6,
+}
+_WEEKDAY_LABEL = ['週一', '週二', '週三', '週四', '週五', '週六', '週日']
+_WEEKLY_RE = re.compile(r'^(週[一二三四五六日天]|周[一二三四五六日天])\s+(\d{1,2}:\d{2})$')
+
+
+def _freq_label(ann: dict) -> str:
+    freq = ann.get('frequency', 'once')
+    if freq == 'weekly_fixed':
+        wd = _WEEKDAY_LABEL[ann.get('weekday', 0)]
+        return f'每{wd} {ann.get("weekday_time", "")}'
+    return FREQ_LABEL.get(freq, '不重複')
+
 
 # ── 工具函式 ──────────────────────────────────────────────────────
 
@@ -40,7 +61,8 @@ def _store(guild_id: int, ann: dict):
     data[gid][ann['id']] = ann
     _save_data(data)
 
-def _calc_next(base: datetime, frequency: str) -> datetime | None:
+def _calc_next(base: datetime, ann: dict) -> datetime | None:
+    frequency = ann.get('frequency', 'once')
     if frequency == 'hourly':
         return base + timedelta(hours=1)
     if frequency == 'daily':
@@ -53,6 +75,17 @@ def _calc_next(base: datetime, frequency: str) -> datetime | None:
             m, y = 1, y + 1
         d = min(base.day, calendar.monthrange(y, m)[1])
         return base.replace(year=y, month=m, day=d)
+    if frequency == 'weekly_fixed':
+        weekday = ann.get('weekday', 0)
+        h, mi = map(int, ann.get('weekday_time', '09:00').split(':'))
+        days_ahead = weekday - base.weekday()
+        if days_ahead < 0:
+            days_ahead += 7
+        elif days_ahead == 0:
+            if base.hour > h or (base.hour == h and base.minute >= mi):
+                days_ahead = 7
+        return (base + timedelta(days=days_ahead)).replace(
+            hour=h, minute=mi, second=0, microsecond=0)
     return None
 
 async def _do_send(channel: discord.TextChannel, ann: dict, guild: discord.Guild) -> bool:
@@ -68,8 +101,8 @@ async def _do_send(channel: discord.TextChannel, ann: dict, guild: discord.Guild
             allowed     = discord.AllowedMentions(roles=[role])
 
     freq      = ann.get('frequency', 'once')
-    next_dt   = _calc_next(tw_now(), freq)
-    freq_text = FREQ_LABEL.get(freq, '不重複')
+    next_dt   = _calc_next(tw_now(), ann)
+    freq_text = _freq_label(ann)
 
     # Tag 放在內容下方（在 embed 內）
     description = ann['content']
@@ -228,12 +261,12 @@ class AnnouncementModal(ui.Modal, title='📢 建立公告'):
     )
     frequency = ui.TextInput(
         label       = '重複週期（選填）',
-        placeholder = '每時 / 每日 / 每周 / 每月 / 留空=不重複',
-        required    = False, max_length=10,
+        placeholder = '每時 / 每日 / 每月 / 週三 20:00 / 週五 18:30 / 留空=不重複',
+        required    = False, max_length=15,
     )
     schedule_time = ui.TextInput(
         label       = '首次發布時間（台灣時間，選填）',
-        placeholder = '格式：2026-05-10 20:00    留空 = 立即發布',
+        placeholder = '格式：2026-05-10 20:00    留空=立即（週X HH:MM 自動計算）',
         required    = False, max_length=20,
     )
 
@@ -247,7 +280,21 @@ class AnnouncementModal(ui.Modal, title='📢 建立公告'):
 
     async def on_submit(self, interaction: discord.Interaction):
         # ─ 解析頻率 ─
-        frequency = FREQ_MAP.get(self.frequency.value.strip(), 'once')
+        freq_input = self.frequency.value.strip()
+        frequency  = 'once'
+        freq_extra = {}
+        wm = _WEEKLY_RE.match(freq_input)
+        if wm:
+            wd_str, time_str = wm.group(1), wm.group(2)
+            h, mi = map(int, time_str.split(':'))
+            if not (0 <= h <= 23 and 0 <= mi <= 59):
+                await interaction.response.send_message(
+                    '❌ 時間格式錯誤，小時應為 0–23，分鐘應為 0–59。', ephemeral=True)
+                return
+            frequency  = 'weekly_fixed'
+            freq_extra = {'weekday': WEEKDAY_MAP[wd_str], 'weekday_time': f'{h:02d}:{mi:02d}'}
+        elif freq_input:
+            frequency = FREQ_MAP.get(freq_input, 'once')
 
         # ─ 解析時間 ─
         first_run = None
@@ -299,6 +346,7 @@ class AnnouncementModal(ui.Modal, title='📢 建立公告'):
             'mention_type':    mention_type,
             'mention_value':   mention_input,
             'frequency':       frequency,
+            **freq_extra,
             'channel_id':      str(channel.id),
             'guild_id':        str(interaction.guild_id),
             'created_by':      str(interaction.user.id),
@@ -307,20 +355,31 @@ class AnnouncementModal(ui.Modal, title='📢 建立公告'):
             'next_run':        (first_run or tw_now()).isoformat(),
         }
 
-        freq_label = FREQ_LABEL.get(frequency, '不重複')
+        label = _freq_label(ann)
 
-        if not first_run:
+        # 每週固定：一律排程到下次指定時間，不立即發送
+        if frequency == 'weekly_fixed':
+            next_dt = _calc_next(tw_now(), ann)
+            ann['next_run'] = next_dt.isoformat()
+            _store(interaction.guild_id, ann)
+            wd = _WEEKDAY_LABEL[ann['weekday']]
+            await interaction.response.send_message(
+                f'✅ 週期公告已排程！\n'
+                f'🔄 重複時間：每{wd} {ann["weekday_time"]}\n'
+                f'⏰ 首次發布：{next_dt.strftime("%Y-%m-%d %H:%M")} 台北時間',
+                ephemeral=True)
+        elif not first_run:
             ok = await _do_send(channel, ann, interaction.guild)
             if not ok:
                 await interaction.response.send_message(
                     '❌ 發送失敗，請確認機器人有該頻道的發送權限。', ephemeral=True)
                 return
             if frequency != 'once':
-                next_dt      = _calc_next(tw_now(), frequency)
+                next_dt = _calc_next(tw_now(), ann)
                 ann['next_run'] = next_dt.isoformat()
                 _store(interaction.guild_id, ann)
                 await interaction.response.send_message(
-                    f'✅ 公告已發布！\n🔄 下次自動重複：{next_dt.strftime("%Y-%m-%d %H:%M")}（{freq_label}）',
+                    f'✅ 公告已發布！\n🔄 下次自動重複：{next_dt.strftime("%Y-%m-%d %H:%M")}（{label}）',
                     ephemeral=True)
             else:
                 await interaction.response.send_message('✅ 公告已發布！', ephemeral=True)
@@ -329,7 +388,7 @@ class AnnouncementModal(ui.Modal, title='📢 建立公告'):
             await interaction.response.send_message(
                 f'✅ 公告已排程！\n'
                 f'📅 首次發布：{first_run.strftime("%Y-%m-%d %H:%M")} 台北時間\n'
-                f'🔄 重複：{freq_label}',
+                f'🔄 重複：{label}',
                 ephemeral=True)
 
 
@@ -341,7 +400,7 @@ class AnnDeleteSelect(ui.Select):
         options  = [
             discord.SelectOption(
                 label       = ann['title'][:80],
-                description = f'ID：{ann_id}  ｜  {FREQ_LABEL.get(ann["frequency"], "不重複")}',
+                description = f'ID：{ann_id}  ｜  {_freq_label(ann)}',
                 value       = ann_id,
             )
             for ann_id, ann in list(anns.items())[:25]
@@ -398,7 +457,7 @@ class AnnManageView(ui.View):
         embed = discord.Embed(title='📋 排程公告列表', color=0x5865F2)
         for ann_id, ann in anns.items():
             next_run = datetime.fromisoformat(ann['next_run']).strftime('%Y-%m-%d %H:%M')
-            freq     = FREQ_LABEL.get(ann['frequency'], '不重複')
+            freq     = _freq_label(ann)
             embed.add_field(
                 name   = f'`{ann_id}`  {ann["title"]}',
                 value  = f'🔄 {freq}  ｜  ⏰ 下次：{next_run} 台北時間',
@@ -481,7 +540,7 @@ class AnnouncementCog(commands.Cog):
                     await _do_send(channel, ann, guild)
                     changed = True
 
-                    next_dt = _calc_next(now, ann['frequency'])
+                    next_dt = _calc_next(now, ann)
                     if next_dt:
                         ann['next_run'] = next_dt.isoformat()
                     else:
