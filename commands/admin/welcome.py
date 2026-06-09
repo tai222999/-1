@@ -34,7 +34,7 @@ class Welcome(commands.Cog):
 
         template = ws.get('welcome_template') or DEFAULT_TEMPLATE
         description = template.format(
-            成員=f'**{member.display_name}**',
+            成員=member.mention,
             須知=notice_mention,
             人數=guild.member_count,
         )
@@ -63,7 +63,7 @@ class Welcome(commands.Cog):
             return
 
         embed = self._build_embed(guild, member, ws)
-        await channel.send(content=member.mention, embed=embed)
+        await channel.send(embed=embed)
 
     @app_commands.command(name='設定歡迎頻道', description='設定新成員加入時發送歡迎訊息的頻道')
     @app_commands.describe(頻道='要接收歡迎訊息的文字頻道（預設為目前頻道）')
@@ -157,7 +157,7 @@ class Welcome(commands.Cog):
             return
 
         embed = self._build_embed(guild, interaction.user, ws, is_test=True)
-        await channel.send(content=interaction.user.mention, embed=embed)
+        await channel.send(embed=embed)
         await interaction.response.send_message(
             f'✅ 已在 {channel.mention} 發送測試歡迎訊息。',
             ephemeral=True
