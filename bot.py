@@ -50,6 +50,7 @@ async def load_extensions():
         'commands.user.general_lottery',
         'commands.user.leave',
         'commands.admin.welcome',
+        'commands.admin.role_panel',
     ]
     for ext in extensions:
         try:
