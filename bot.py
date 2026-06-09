@@ -83,14 +83,21 @@ async def on_ready():
 
     # 先對每個已加入的伺服器做即時同步（立刻生效）
     for guild in bot.guilds:
-        bot.tree.copy_global_to(guild=guild)
-        await bot.tree.sync(guild=guild)
+        try:
+            bot.tree.copy_global_to(guild=guild)
+            await bot.tree.sync(guild=guild)
+            print(f'🔄 已同步伺服器：{guild.name}')
+        except Exception as e:
+            print(f'⚠️ 同步伺服器 {guild.name} 失敗：{e}')
 
     # 再做全域同步（讓新伺服器也能使用）
-    synced = await bot.tree.sync()
-    print(f'✅ {bot.user} 已上線！')
-    print(f'📋 Bot ID: {bot.user.id}')
-    print(f'🔄 斜線指令已同步：{len(synced)} 個指令（伺服器即時生效）')
+    try:
+        synced = await bot.tree.sync()
+        print(f'✅ {bot.user} 已上線！')
+        print(f'📋 Bot ID: {bot.user.id}')
+        print(f'🔄 斜線指令已同步：{len(synced)} 個指令（伺服器即時生效）')
+    except Exception as e:
+        print(f'❌ 全域同步失敗：{e}')
 
 async def main():
     async with bot:
