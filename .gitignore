@@ -1,0 +1,30 @@
+# 環境變數（含 Token，絕對不能上傳）
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+*.pyo
+*.pyd
+.Python
+*.egg-info/
+dist/
+build/
+.eggs/
+
+# 資料檔案（本地測試資料，Render 有自己的 disk）
+data/
+
+# 虛擬環境
+venv/
+.venv/
+env/
+
+# 編輯器
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Claude Code 內部設定
+.claude/
