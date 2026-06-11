@@ -223,27 +223,6 @@ class VoiceChannelCog(commands.Cog):
         guild_data.setdefault('active', {})[str(new_ch.id)] = str(member.id)
         _set(gid, guild_data)
 
-        embed = discord.Embed(
-            title='🎛️ 語音頻道控制面板',
-            description=(
-                f'你的語音頻道 **{channel_name}** 已建立！\n'
-                '使用下方按鈕來管理你的頻道。\n\n'
-                '> 頻道內無人時將自動刪除。'
-            ),
-            color=0x57F287,
-        )
-        limit_str = '無限制' if default_limit == 0 else f'{default_limit} 人'
-        embed.add_field(
-            name='📌 目前設定',
-            value=f'名稱：**{channel_name}**\n人數上限：**{limit_str}**',
-            inline=False,
-        )
-        view = VoiceControlView(new_ch.id, member.id)
-        try:
-            await member.send(embed=embed, view=view)
-        except discord.Forbidden:
-            pass  # 使用者關閉私訊
-
     # ── /設定語音觸發頻道 ──────────────────────────────────────
     @app_commands.command(name='設定語音觸發頻道', description='設定使用者加入後自動分配新語音頻道的觸發頻道')
     @app_commands.describe(頻道='使用者加入此語音頻道後會自動被分配新的頻道')
