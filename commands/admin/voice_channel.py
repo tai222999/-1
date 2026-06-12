@@ -209,11 +209,28 @@ class VoiceChannelCog(commands.Cog):
         channel_name = default_name.replace('{user}', member.display_name)
         category = guild.get_channel(int(category_id)) if category_id else None
 
+        # 明確設定頻道權限，避免繼承分類限制導致其他成員看不到或聽不到
+        overwrites = {
+            guild.default_role: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+            ),
+            member: discord.PermissionOverwrite(
+                view_channel=True,
+                connect=True,
+                speak=True,
+                manage_channels=True,
+                move_members=True,
+            ),
+        }
+
         try:
             new_ch = await guild.create_voice_channel(
                 name=channel_name,
                 user_limit=default_limit,
                 category=category,
+                overwrites=overwrites,
                 reason=f'自動語音頻道：{member.display_name}',
             )
             await member.move_to(new_ch, reason='移動到自動建立的語音頻道')
