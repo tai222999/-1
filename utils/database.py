@@ -179,6 +179,21 @@ class Database:
             data[gid][cid]['users'].append(uid)
         _save('today_checkins.json', data)
 
+    # ─── 遷移：修正舊版錯誤預設值 ───────────────────────────────
+    def migrate_reset_times(self):
+        """將所有頻道中舊的 reset_hour=23, reset_minute=59 遷移為 0:00。"""
+        data = _load('channel_settings.json')
+        changed = False
+        for gid, channels in data.items():
+            for cid, settings in channels.items():
+                if settings.get('reset_hour') == 23 and settings.get('reset_minute', 59) == 59:
+                    settings['reset_hour'] = 0
+                    settings['reset_minute'] = 0
+                    changed = True
+                    print(f'[遷移] 已將 guild={gid} channel={cid} 的重置時間從 23:59 更新為 00:00')
+        if changed:
+            _save('channel_settings.json', data)
+
     # ─── 頻道設定 ────────────────────────────────────────────
     def get_channel_settings(self, guild_id, channel_id):
         data = _load('channel_settings.json')

@@ -83,6 +83,9 @@ async def on_ready():
     from commands.user.panel import CheckInView
     bot.add_view(CheckInView())
 
+    # 修正舊版 23:59 預設值
+    db.migrate_reset_times()
+
     # 只做伺服器層級同步（立刻生效，避免與全域指令重複）
     for guild in bot.guilds:
         try:
