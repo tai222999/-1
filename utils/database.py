@@ -183,8 +183,8 @@ class Database:
     def get_channel_settings(self, guild_id, channel_id):
         data = _load('channel_settings.json')
         defaults = {
-            'reset_hour': 23,
-            'reset_minute': 59,
+            'reset_hour': 0,
+            'reset_minute': 0,
             'require_proof': False,
             'min_words': 0
         }
@@ -251,7 +251,7 @@ class Database:
         tz = pytz.timezone(self.get_timezone(guild_id))
         return datetime.now(tz)
 
-    def get_today_str(self, guild_id, reset_hour=23, reset_minute=59):
+    def get_today_str(self, guild_id, reset_hour=0, reset_minute=0):
         """
         以 reset_hour:reset_minute 為每日分界線。
         預設 23:59，即每天 23:59 之後才算隔天。

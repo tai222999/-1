@@ -29,8 +29,8 @@ class DailyScheduler(commands.Cog):
                 if not settings.get('announce_enabled', True):
                     continue
 
-                reset_hour   = settings.get('reset_hour', 23)
-                reset_minute = settings.get('reset_minute', 59)
+                reset_hour   = settings.get('reset_hour', 0)
+                reset_minute = settings.get('reset_minute', 0)
 
                 now_total   = now.hour * 60 + now.minute
                 reset_total = reset_hour * 60 + reset_minute

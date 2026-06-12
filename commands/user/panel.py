@@ -99,8 +99,8 @@ class CheckInView(discord.ui.View):
             return
 
         settings      = db.get_channel_settings(guild_id, channel_id)
-        reset_hour    = settings.get('reset_hour', 23)
-        reset_minute  = settings.get('reset_minute', 59)
+        reset_hour    = settings.get('reset_hour', 0)
+        reset_minute  = settings.get('reset_minute', 0)
         require_proof = settings.get('require_proof', False)
         min_words     = settings.get('min_words', 0)
 

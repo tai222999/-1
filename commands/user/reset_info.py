@@ -15,8 +15,8 @@ class ResetInfo(commands.Cog):
         channel_id = interaction.channel_id
 
         settings     = db.get_channel_settings(guild_id, channel_id)
-        reset_hour   = settings.get('reset_hour', 23)
-        reset_minute = settings.get('reset_minute', 59)
+        reset_hour   = settings.get('reset_hour', 0)
+        reset_minute = settings.get('reset_minute', 0)
         announce_on  = settings.get('announce_enabled', True)
         tz_name      = db.get_timezone(guild_id)
         now          = db.get_now(guild_id)

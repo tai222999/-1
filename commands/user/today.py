@@ -15,8 +15,8 @@ class Today(commands.Cog):
         channel_id = interaction.channel_id
 
         settings     = db.get_channel_settings(guild_id, channel_id)
-        reset_hour   = settings.get('reset_hour', 23)
-        reset_minute = settings.get('reset_minute', 59)
+        reset_hour   = settings.get('reset_hour', 0)
+        reset_minute = settings.get('reset_minute', 0)
         today_str    = db.get_today_str(guild_id, reset_hour, reset_minute)
         tz_name      = db.get_timezone(guild_id)
 
