@@ -244,6 +244,11 @@ class VoiceChannelCog(commands.Cog):
                 reason=f'自動語音頻道：{member.display_name}',
             )
             await member.move_to(new_ch, reason='移動到自動建立的語音頻道')
+            # 觸發頻道若有靜音/耳聾設定，搬移後需手動取消，否則狀態會帶進新頻道
+            try:
+                await member.edit(mute=False, deafen=False, reason='取消觸發頻道的靜音狀態')
+            except discord.Forbidden:
+                pass
         except (discord.Forbidden, discord.HTTPException):
             return
 
