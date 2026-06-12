@@ -9,10 +9,10 @@ class Settings(commands.Cog):
         self.bot = bot
 
     # ── /設定重置時間 ────────────────────────────────────────────
-    @app_commands.command(name='設定重置時間', description='設定此頻道的每日簽到重置時間（預設 23:59）')
-    @app_commands.describe(時間='格式 HH:MM，例如 23:59 或 00:00')
+    @app_commands.command(name='設定重置時間', description='設定此頻道的每日簽到重置時間（預設 00:00 午夜）')
+    @app_commands.describe(時間='格式 HH:MM，例如 00:00 或 04:00（幾點後算隔天）')
     @admin_only()
-    async def slash_set_reset(self, interaction: discord.Interaction, 時間: str = '23:59'):
+    async def slash_set_reset(self, interaction: discord.Interaction, 時間: str = '00:00'):
         db = self.bot.db
         guild_id   = interaction.guild_id
         channel_id = interaction.channel_id
@@ -20,7 +20,7 @@ class Settings(commands.Cog):
         try:
             parts  = 時間.split(':')
             hour   = int(parts[0])
-            minute = int(parts[1]) if len(parts) > 1 else 59
+            minute = int(parts[1]) if len(parts) > 1 else 0
             if not (0 <= hour <= 23 and 0 <= minute <= 59):
                 raise ValueError
         except (ValueError, IndexError):
