@@ -573,9 +573,9 @@ class DropsCog(commands.Cog):
                 continue
             if name in data['monsters']:
                 ex = data['monsters'][name]
-                old_d = set(ex.get('drops', []))
-                new_d = set(monster['drops'])
-                ex['drops'] = sorted(old_d | new_d)
+                ex['drops']      = sorted(set(ex.get('drops', []))      | set(monster.get('drops', [])))
+                ex['skillbooks'] = sorted(set(ex.get('skillbooks', [])) | set(monster.get('skillbooks', [])))
+                ex['recipes']    = sorted(set(ex.get('recipes', []))    | set(monster.get('recipes', [])))
                 ex['level'] = monster['level']
                 updated += 1
             else:
