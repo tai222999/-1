@@ -82,15 +82,7 @@ async def on_ready():
     from commands.user.panel import CheckInView
     bot.add_view(CheckInView())
 
-    # 清除 Discord 上的全域指令（避免與伺服器指令重複顯示）
-    try:
-        bot.tree.clear_commands(guild=None)
-        await bot.tree.sync()
-        print('🧹 已清除全域指令')
-    except Exception as e:
-        print(f'⚠️ 清除全域指令失敗：{e}')
-
-    # 只做伺服器層級同步（立刻生效）
+    # 只做伺服器層級同步（立刻生效，避免與全域指令重複）
     for guild in bot.guilds:
         try:
             bot.tree.copy_global_to(guild=guild)
