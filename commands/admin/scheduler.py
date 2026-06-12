@@ -32,25 +32,17 @@ class DailyScheduler(commands.Cog):
                 reset_hour   = settings.get('reset_hour', 0)
                 reset_minute = settings.get('reset_minute', 0)
 
-                now_total   = now.hour * 60 + now.minute
-                reset_total = reset_hour * 60 + reset_minute
-
-                if now_total >= reset_total:
-                    checkin_date_str = now.strftime('%Y-%m-%d')
-                else:
-                    yesterday = now - timedelta(days=1)
-                    checkin_date_str = yesterday.strftime('%Y-%m-%d')
+                # 公告對象為「已結束的那一天」= 目前 get_today_str 所代表的期間 - 1 天
+                # 例：reset=00:00，現在是 6/13 → get_today_str 回傳 "2026-06-13"
+                #     → 要公告的是已完成的 "2026-06-12" 那天的統計
+                current_period   = db.get_today_str(guild_id, reset_hour, reset_minute)
+                checkin_date_str = (
+                    datetime.strptime(current_period, '%Y-%m-%d') - timedelta(days=1)
+                ).strftime('%Y-%m-%d')
 
                 announce_key = (guild_id, int(channel_id_str), checkin_date_str)
-
-                is_reset_time      = (now.hour == reset_hour and now.minute == reset_minute)
-                is_past_reset      = now_total > reset_total
-                is_next_day_makeup = now_total < reset_total
-
-                should_announce = (
-                    (is_reset_time or is_past_reset or is_next_day_makeup) and
-                    announce_key not in self.announced
-                )
+                is_makeup    = not (now.hour == reset_hour and now.minute == reset_minute)
+                should_announce = announce_key not in self.announced
 
                 if not should_announce:
                     continue
@@ -68,7 +60,6 @@ class DailyScheduler(commands.Cog):
 
                 channel = guild.get_channel(int(channel_id_str))
                 if channel:
-                    is_makeup = not is_reset_time
                     await self._do_daily_reset(
                         guild, channel, settings, db,
                         checkin_date_str, reset_hour, reset_minute, is_makeup

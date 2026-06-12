@@ -254,7 +254,8 @@ class Database:
     def get_today_str(self, guild_id, reset_hour=0, reset_minute=0):
         """
         以 reset_hour:reset_minute 為每日分界線。
-        預設 23:59，即每天 23:59 之後才算隔天。
+        預設 00:00（午夜），即每天午夜之後算隔天。
+        若 reset_hour=4，則凌晨 0~3 點簽到仍算前一天。
         """
         now = self.get_now(guild_id)
         now_minutes = now.hour * 60 + now.minute
