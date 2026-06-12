@@ -52,6 +52,7 @@ async def load_extensions():
         'commands.admin.welcome',
         'commands.admin.role_panel',
         'commands.admin.voice_channel',
+        'commands.admin.checkin_debug',
     ]
     for ext in extensions:
         try:
