@@ -209,21 +209,31 @@ class VoiceChannelCog(commands.Cog):
         channel_name = default_name.replace('{user}', member.display_name)
         category = guild.get_channel(int(category_id)) if category_id else None
 
-        # 明確設定頻道權限，避免繼承分類限制導致其他成員看不到或聽不到
-        overwrites = {
-            guild.default_role: discord.PermissionOverwrite(
-                view_channel=True,
-                connect=True,
-                speak=True,
-            ),
-            member: discord.PermissionOverwrite(
-                view_channel=True,
-                connect=True,
-                speak=True,
-                manage_channels=True,
-                move_members=True,
-            ),
-        }
+        # 音訊相關權限 bitmask
+        audio_perm = discord.Permissions(view_channel=True, connect=True, speak=True)
+
+        # 從分類複製所有覆蓋，但強制解除所有角色/成員的音訊限制
+        overwrites = {}
+        if category:
+            for target, cat_ow in category.overwrites.items():
+                allow, deny = cat_ow.pair()
+                new_deny = discord.Permissions(deny.value & ~audio_perm.value)
+                new_allow = discord.Permissions(allow.value | audio_perm.value)
+                overwrites[target] = discord.PermissionOverwrite.from_pair(new_allow, new_deny)
+
+        # 確保 @everyone 明確可以看到、連線、說話
+        everyone_ow = overwrites.get(guild.default_role, discord.PermissionOverwrite())
+        everyone_ow.view_channel = True
+        everyone_ow.connect = True
+        everyone_ow.speak = True
+        overwrites[guild.default_role] = everyone_ow
+
+        # 創建者同樣明確允許（不加 manage_channels / move_members 以免機器人權限不足導致靜默失敗）
+        overwrites[member] = discord.PermissionOverwrite(
+            view_channel=True,
+            connect=True,
+            speak=True,
+        )
 
         try:
             new_ch = await guild.create_voice_channel(
