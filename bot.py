@@ -82,23 +82,25 @@ async def on_ready():
     from commands.user.panel import CheckInView
     bot.add_view(CheckInView())
 
-    # 先對每個已加入的伺服器做即時同步（立刻生效）
+    # 清除 Discord 上的全域指令（避免與伺服器指令重複顯示）
+    try:
+        bot.tree.clear_commands(guild=None)
+        await bot.tree.sync()
+        print('🧹 已清除全域指令')
+    except Exception as e:
+        print(f'⚠️ 清除全域指令失敗：{e}')
+
+    # 只做伺服器層級同步（立刻生效）
     for guild in bot.guilds:
         try:
             bot.tree.copy_global_to(guild=guild)
-            await bot.tree.sync(guild=guild)
-            print(f'🔄 已同步伺服器：{guild.name}')
+            synced = await bot.tree.sync(guild=guild)
+            print(f'🔄 已同步伺服器：{guild.name}（{len(synced)} 個指令）')
         except Exception as e:
             print(f'⚠️ 同步伺服器 {guild.name} 失敗：{e}')
 
-    # 再做全域同步（讓新伺服器也能使用）
-    try:
-        synced = await bot.tree.sync()
-        print(f'✅ {bot.user} 已上線！')
-        print(f'📋 Bot ID: {bot.user.id}')
-        print(f'🔄 斜線指令已同步：{len(synced)} 個指令（伺服器即時生效）')
-    except Exception as e:
-        print(f'❌ 全域同步失敗：{e}')
+    print(f'✅ {bot.user} 已上線！')
+    print(f'📋 Bot ID: {bot.user.id}')
 
 async def main():
     async with bot:
