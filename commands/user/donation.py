@@ -14,14 +14,16 @@ TW_TZ = timezone(timedelta(hours=8))
 def tw_now() -> datetime:
     return datetime.now(TW_TZ)
 
-PENDING_FILE = 'donation_pending.json'
-STORAGE_FILE = 'donation_storage.json'
-EXPIRE_HOURS = 6
+PENDING_FILE  = 'donation_pending.json'
+STORAGE_FILE  = 'donation_storage.json'
+LOTTERY_FILE  = 'donation_lotteries.json'
+EXPIRE_HOURS  = 6
 
 ICON  = {'裝備': '⚔️', '卷軸': '📜', '其他物品': '📦'}
 COLOR = {'裝備': 0xE74C3C, '卷軸': 0x9B59B6, '其他物品': 0x3498DB}
 
 # 進行中的捐獻抽獎 {guild_id(int): lottery_data}
+# participants 欄位為 list[{'id': int, 'name': str}]
 active_donation_lotteries: dict[int, dict] = {}
 donation_scheduled_tasks:  dict[int, dict] = {}   # {guild_id: task_info}
 
@@ -40,6 +42,55 @@ def _load_storage() -> list:
 
 def _save_storage(items: list):
     _save(STORAGE_FILE, {'items': items})
+
+def _dt_to_str(dt) -> str | None:
+    return dt.isoformat() if isinstance(dt, datetime) else dt
+
+def _str_to_dt(s) -> datetime | None:
+    if isinstance(s, str):
+        try:
+            return datetime.fromisoformat(s)
+        except ValueError:
+            return None
+    return s
+
+def _save_lotteries():
+    lotteries_data = {}
+    for gid, lottery in active_donation_lotteries.items():
+        entry = {**lottery}
+        entry['created_at'] = _dt_to_str(entry.get('created_at'))
+        entry['draw_time']  = _dt_to_str(entry.get('draw_time'))
+        lotteries_data[str(gid)] = entry
+
+    tasks_data = {}
+    for gid, task in donation_scheduled_tasks.items():
+        entry = {**task}
+        entry['draw_time'] = _dt_to_str(entry.get('draw_time'))
+        tasks_data[str(gid)] = entry
+
+    _save(LOTTERY_FILE, {'lotteries': lotteries_data, 'scheduled_tasks': tasks_data})
+
+def _load_lotteries():
+    global active_donation_lotteries, donation_scheduled_tasks
+    data = _load(LOTTERY_FILE)
+    if not isinstance(data, dict):
+        return
+
+    for gid_str, lottery in data.get('lotteries', {}).items():
+        entry = {**lottery}
+        entry['created_at'] = _str_to_dt(entry.get('created_at'))
+        entry['draw_time']  = _str_to_dt(entry.get('draw_time'))
+        if not isinstance(entry.get('participants'), list):
+            entry['participants'] = []
+        active_donation_lotteries[int(gid_str)] = entry
+
+    for gid_str, task in data.get('scheduled_tasks', {}).items():
+        entry = {**task}
+        dt = _str_to_dt(entry.get('draw_time'))
+        if dt is None:
+            continue
+        entry['draw_time'] = dt
+        donation_scheduled_tasks[int(gid_str)] = entry
 
 
 # ── 捐獻類型選擇面板（ephemeral，暫時性）────────────────────────
@@ -258,23 +309,24 @@ class DonationPanelView(ui.View):
 
 
 # ═══════════════════════════════════════════════════════════════════
-#  捐獻抽獎系統（仿照抽籤系統架構）
+#  捐獻抽獎系統
 # ═══════════════════════════════════════════════════════════════════
 
 async def _update_lottery_embed(interaction: discord.Interaction, lottery: dict):
     """更新管理面板 embed 上的成員列表。"""
-    total = len(lottery['participants'])
+    participants = lottery['participants']
+    total = len(participants)
     if total == 0:
         member_list = '尚未加入任何成員'
     elif total <= 20:
         member_list = '\n'.join(
-            f'│`{i+1:>2}.` {m.display_name}'
-            for i, m in enumerate(lottery['participants'])
+            f'│`{i+1:>2}.` {p["name"]}'
+            for i, p in enumerate(participants)
         )
     else:
         first = '\n'.join(
-            f'│`{i+1:>2}.` {m.display_name}'
-            for i, m in enumerate(lottery['participants'][:10])
+            f'│`{i+1:>2}.` {p["name"]}'
+            for i, p in enumerate(participants[:10])
         )
         member_list = f'{first}\n│... 共 {total} 人 ...'
 
@@ -294,96 +346,103 @@ async def _update_lottery_embed(interaction: discord.Interaction, lottery: dict)
 # ── 手動選擇成員 ──────────────────────────────────────────────────
 
 class DonationLotteryMemberSelect(ui.UserSelect):
-    def __init__(self, guild_id: int):
+    def __init__(self):
         super().__init__(placeholder='👤 手動選擇成員…',
-                         min_values=1, max_values=25, row=0)
-        self.guild_id = guild_id
+                         min_values=1, max_values=25, row=0,
+                         custom_id='donation_lottery_member_select')
 
     async def callback(self, interaction: discord.Interaction):
-        lottery = active_donation_lotteries.get(self.guild_id)
+        lottery = active_donation_lotteries.get(interaction.guild_id)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True)
             return
         if interaction.user.id != lottery['creator']:
             await interaction.response.send_message('❌ 只有建立者可以操作。', ephemeral=True)
             return
-        existing = {m.id for m in lottery['participants']}
-        added = [m for m in self.values if m.id not in existing and not m.bot]
+        existing = {p['id'] for p in lottery['participants']}
+        added = [{'id': m.id, 'name': m.display_name}
+                 for m in self.values if m.id not in existing and not m.bot]
         if not added:
             await interaction.response.send_message('⚠️ 所選成員已在名單中或為機器人。', ephemeral=True)
             return
         lottery['participants'].extend(added)
+        _save_lotteries()
         await _update_lottery_embed(interaction, lottery)
 
 
 # ── 身份組批量加入 ────────────────────────────────────────────────
 
 class DonationLotteryRoleSelect(ui.RoleSelect):
-    def __init__(self, guild_id: int):
+    def __init__(self):
         super().__init__(placeholder='🏷️ 選擇身份組（整組加入）…',
-                         min_values=1, max_values=10, row=1)
-        self.guild_id = guild_id
+                         min_values=1, max_values=10, row=1,
+                         custom_id='donation_lottery_role_select')
 
     async def callback(self, interaction: discord.Interaction):
-        lottery = active_donation_lotteries.get(self.guild_id)
+        lottery = active_donation_lotteries.get(interaction.guild_id)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True)
             return
         if interaction.user.id != lottery['creator']:
             await interaction.response.send_message('❌ 只有建立者可以操作。', ephemeral=True)
             return
-        existing = {m.id for m in lottery['participants']}
+        existing = {p['id'] for p in lottery['participants']}
         added = []
         for role in self.values:
             for member in role.members:
                 if member.id not in existing and not member.bot:
-                    lottery['participants'].append(member)
+                    added.append({'id': member.id, 'name': member.display_name})
                     existing.add(member.id)
-                    added.append(member)
         if not added:
             await interaction.response.send_message('⚠️ 該身份組的成員都已在名單中。', ephemeral=True)
             return
+        lottery['participants'].extend(added)
+        _save_lotteries()
         await _update_lottery_embed(interaction, lottery)
 
 
-# ── 抽獎管理面板 ─────────────────────────────────────────────────
+# ── 抽獎管理面板（持久化）────────────────────────────────────────
 
 class DonationLotteryManageView(ui.View):
-    def __init__(self, guild_id: int):
+    def __init__(self):
         super().__init__(timeout=None)
-        self.guild_id = guild_id
-        self.add_item(DonationLotteryMemberSelect(guild_id))
-        self.add_item(DonationLotteryRoleSelect(guild_id))
+        self.add_item(DonationLotteryMemberSelect())
+        self.add_item(DonationLotteryRoleSelect())
 
-    def _get(self):
-        return active_donation_lotteries.get(self.guild_id)
+    @staticmethod
+    def _get_lottery(interaction: discord.Interaction):
+        return active_donation_lotteries.get(interaction.guild_id)
 
-    def _is_creator(self, interaction: discord.Interaction) -> bool:
-        lottery = self._get()
+    @staticmethod
+    def _is_creator(interaction: discord.Interaction, lottery: dict) -> bool:
         return lottery is not None and interaction.user.id == lottery['creator']
 
     # ── 加入頻道全員 ──────────────────────────────────────────────
-    @ui.button(label='🟢 加入頻道全員', style=discord.ButtonStyle.primary, row=2)
+    @ui.button(label='🟢 加入頻道全員', style=discord.ButtonStyle.primary,
+               custom_id='donation_lottery_add_channel', row=2)
     async def add_channel_btn(self, interaction: discord.Interaction, button: ui.Button):
-        lottery = self._get()
+        lottery = self._get_lottery(interaction)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True); return
-        if not self._is_creator(interaction):
+        if not self._is_creator(interaction, lottery):
             await interaction.response.send_message('❌ 只有建立者可以操作。', ephemeral=True); return
-        existing = {m.id for m in lottery['participants']}
-        added = [m for m in interaction.channel.members if m.id not in existing and not m.bot]
+        existing = {p['id'] for p in lottery['participants']}
+        added = [{'id': m.id, 'name': m.display_name}
+                 for m in interaction.channel.members if m.id not in existing and not m.bot]
         if not added:
             await interaction.response.send_message('⚠️ 頻道內所有成員都已在名單中。', ephemeral=True); return
         lottery['participants'].extend(added)
+        _save_lotteries()
         await _update_lottery_embed(interaction, lottery)
 
     # ── 開始抽獎 ──────────────────────────────────────────────────
-    @ui.button(label='🎲 開始抽獎', style=discord.ButtonStyle.success, row=3)
+    @ui.button(label='🎲 開始抽獎', style=discord.ButtonStyle.success,
+               custom_id='donation_lottery_draw', row=3)
     async def draw_btn(self, interaction: discord.Interaction, button: ui.Button):
-        lottery = self._get()
+        lottery = self._get_lottery(interaction)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True); return
-        if not self._is_creator(interaction):
+        if not self._is_creator(interaction, lottery):
             await interaction.response.send_message('❌ 只有建立者可以開始抽獎。', ephemeral=True); return
 
         participants = lottery['participants']
@@ -416,8 +475,9 @@ class DonationLotteryManageView(ui.View):
         used_ids = {item['id'] for _, item in pairs}
         _save_storage([it for it in storage if it['id'] not in used_ids])
 
-        active_donation_lotteries.pop(self.guild_id, None)
-        donation_scheduled_tasks.pop(self.guild_id, None)
+        active_donation_lotteries.pop(interaction.guild_id, None)
+        donation_scheduled_tasks.pop(interaction.guild_id, None)
+        _save_lotteries()
 
         result_embed = discord.Embed(
             title=f'🏆 捐獻抽獎結果：{lottery["name"]}',
@@ -429,18 +489,19 @@ class DonationLotteryManageView(ui.View):
             else:
                 extra = f"\n數量：{det.get('quantity','?')}"
             result_embed.add_field(
-                name=f'🏆 {winner.display_name}',
+                name=f'🏆 {winner["name"]}',
                 value=f'{ICON.get(item["type"],"📦")} **{item["name"]}**{extra}',
                 inline=False,
             )
         result_embed.set_footer(text=f'由 {interaction.user.display_name} 主持 | 物品已從儲存庫移除')
         await msg.edit(embed=result_embed)
-        await interaction.channel.send('🎉 恭喜！' + ' '.join(w.mention for w, _ in pairs))
+        await interaction.channel.send('🎉 恭喜！' + ' '.join(f'<@{w["id"]}>' for w, _ in pairs))
 
     # ── 查看名單 ──────────────────────────────────────────────────
-    @ui.button(label='📋 查看名單', style=discord.ButtonStyle.secondary, row=3)
+    @ui.button(label='📋 查看名單', style=discord.ButtonStyle.secondary,
+               custom_id='donation_lottery_view_list', row=3)
     async def view_list_btn(self, interaction: discord.Interaction, button: ui.Button):
-        lottery = self._get()
+        lottery = self._get_lottery(interaction)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True); return
         if not lottery['participants']:
@@ -448,7 +509,7 @@ class DonationLotteryManageView(ui.View):
         embed = discord.Embed(
             title=f'📋 {lottery["name"]} — 參加名單',
             description='\n'.join(
-                f'│`{i+1:>2}.` {m.display_name}' for i, m in enumerate(lottery['participants'])
+                f'│`{i+1:>2}.` {p["name"]}' for i, p in enumerate(lottery['participants'])
             )[:4096],
             color=0x5865F2,
         )
@@ -456,7 +517,8 @@ class DonationLotteryManageView(ui.View):
         await interaction.response.send_message(embed=embed, ephemeral=True)
 
     # ── 查看儲存庫 ────────────────────────────────────────────────
-    @ui.button(label='📦 查看儲存庫', style=discord.ButtonStyle.secondary, row=3)
+    @ui.button(label='📦 查看儲存庫', style=discord.ButtonStyle.secondary,
+               custom_id='donation_lottery_view_storage', row=3)
     async def view_storage_btn(self, interaction: discord.Interaction, button: ui.Button):
         if not interaction.client.db.is_admin(interaction.guild_id, interaction.user):
             await interaction.response.send_message('❌ 只有管理員可查看儲存庫。', ephemeral=True)
@@ -482,14 +544,16 @@ class DonationLotteryManageView(ui.View):
                                                  ephemeral=True)
 
     # ── 清空名單 ──────────────────────────────────────────────────
-    @ui.button(label='🗑️ 清空名單', style=discord.ButtonStyle.danger, row=4)
+    @ui.button(label='🗑️ 清空名單', style=discord.ButtonStyle.danger,
+               custom_id='donation_lottery_clear', row=4)
     async def clear_btn(self, interaction: discord.Interaction, button: ui.Button):
-        lottery = self._get()
+        lottery = self._get_lottery(interaction)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True); return
-        if not self._is_creator(interaction):
+        if not self._is_creator(interaction, lottery):
             await interaction.response.send_message('❌ 只有建立者可以清空名單。', ephemeral=True); return
         lottery['participants'] = []
+        _save_lotteries()
         embed = interaction.message.embeds[0]
         for i, field in enumerate(embed.fields):
             if '已指定成員' in field.name:
@@ -499,15 +563,17 @@ class DonationLotteryManageView(ui.View):
         await interaction.response.edit_message(embed=embed)
 
     # ── 取消抽獎 ──────────────────────────────────────────────────
-    @ui.button(label='✖ 取消抽獎', style=discord.ButtonStyle.secondary, row=4)
+    @ui.button(label='✖ 取消抽獎', style=discord.ButtonStyle.secondary,
+               custom_id='donation_lottery_cancel', row=4)
     async def cancel_btn(self, interaction: discord.Interaction, button: ui.Button):
-        lottery = self._get()
+        lottery = self._get_lottery(interaction)
         if not lottery:
             await interaction.response.send_message('❌ 找不到此抽獎活動。', ephemeral=True); return
-        if not self._is_creator(interaction):
+        if not self._is_creator(interaction, lottery):
             await interaction.response.send_message('❌ 只有建立者可以取消。', ephemeral=True); return
-        active_donation_lotteries.pop(self.guild_id, None)
-        donation_scheduled_tasks.pop(self.guild_id, None)
+        active_donation_lotteries.pop(interaction.guild_id, None)
+        donation_scheduled_tasks.pop(interaction.guild_id, None)
+        _save_lotteries()
         embed = discord.Embed(
             title='✖ 捐獻抽獎已取消',
             description=f'「{lottery["name"]}」已被 {interaction.user.display_name} 取消。',
@@ -587,6 +653,7 @@ class DonationLotteryModal(ui.Modal, title='🎰 建立捐獻抽獎'):
                 'channel_id': interaction.channel_id,
                 'draw_time':  draw_time,
             }
+        _save_lotteries()
 
         embed = discord.Embed(
             title=f'🎰 捐獻抽獎：{self.lottery_name.value}',
@@ -603,7 +670,7 @@ class DonationLotteryModal(ui.Modal, title='🎰 建立捐獻抽獎'):
         embed.set_footer(text=f'建立者：{interaction.user.display_name}｜僅建立者可操作')
 
         await interaction.response.send_message(
-            embed=embed, view=DonationLotteryManageView(gid))
+            embed=embed, view=DonationLotteryManageView())
 
 
 # ── Cog ──────────────────────────────────────────────────────────
@@ -611,8 +678,10 @@ class DonationLotteryModal(ui.Modal, title='🎰 建立捐獻抽獎'):
 class DonationCog(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
+        _load_lotteries()
         bot.add_view(DonationPanelView())
         bot.add_view(DonationAcceptView())
+        bot.add_view(DonationLotteryManageView())
         self.expire_check.start()
         self.lottery_check.start()
 
@@ -666,11 +735,13 @@ class DonationCog(commands.Cog):
             lottery = active_donation_lotteries.get(gid)
             donation_scheduled_tasks.pop(gid, None)
             if not lottery:
+                _save_lotteries()
                 continue
 
             channel = self.bot.get_channel(task['channel_id'])
             if not channel:
                 active_donation_lotteries.pop(gid, None)
+                _save_lotteries()
                 continue
 
             participants = lottery['participants']
@@ -680,12 +751,14 @@ class DonationCog(commands.Cog):
                     f'❌ 定時捐獻抽獎「{lottery["name"]}」參加人數不足（{len(participants)}/{winner_count}），已取消。'
                 )
                 active_donation_lotteries.pop(gid, None)
+                _save_lotteries()
                 continue
 
             storage = _load_storage()
             if not storage:
                 await channel.send(f'❌ 定時抽獎「{lottery["name"]}」儲存庫沒有物品，已取消。')
                 active_donation_lotteries.pop(gid, None)
+                _save_lotteries()
                 continue
 
             countdown_embed = discord.Embed(
@@ -703,6 +776,7 @@ class DonationCog(commands.Cog):
             used_ids = {item['id'] for _, item in pairs}
             _save_storage([it for it in storage if it['id'] not in used_ids])
             active_donation_lotteries.pop(gid, None)
+            _save_lotteries()
 
             result_embed = discord.Embed(
                 title=f'🏆 定時捐獻抽獎結果：{lottery["name"]}',
@@ -712,13 +786,13 @@ class DonationCog(commands.Cog):
                 extra = (f"\n強化：{det.get('enhancement','—')} | 潛能：{det.get('potential','—')}"
                          if item['type'] == '裝備' else f"\n數量：{det.get('quantity','?')}")
                 result_embed.add_field(
-                    name=f'🏆 {winner.display_name}',
+                    name=f'🏆 {winner["name"]}',
                     value=f'{ICON.get(item["type"],"📦")} **{item["name"]}**{extra}',
                     inline=False,
                 )
             result_embed.set_footer(text='⏰ 定時自動抽獎 | 物品已從儲存庫移除')
             await msg.edit(embed=result_embed)
-            await channel.send('🎉 恭喜！' + ' '.join(w.mention for w, _ in pairs))
+            await channel.send('🎉 恭喜！' + ' '.join(f'<@{w["id"]}>' for w, _ in pairs))
 
     @lottery_check.before_loop
     async def before_lottery_check(self):

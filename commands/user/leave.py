@@ -95,14 +95,15 @@ class LeaveModal(ui.Modal, title='📝 請假申請'):
             'channel_id':   interaction.channel_id,
             'message_id':   None,
         }
+
+        # 先發布公告取得 message_id，再一次存檔，避免儲存兩次或 message_id 遺失
+        try:
+            msg = await interaction.channel.send(embed=_leave_embed(record, interaction.user))
+            record['message_id'] = msg.id
+        except Exception:
+            pass
+
         guild_data[user_id] = record
-        _save_leaves(data)
-
-        # 公開發布請假公告
-        msg = await interaction.channel.send(embed=_leave_embed(record, interaction.user))
-
-        # 補存 message_id
-        guild_data[user_id]['message_id'] = msg.id
         _save_leaves(data)
 
         await interaction.followup.send(
