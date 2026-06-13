@@ -1,3 +1,4 @@
+import asyncio
 import json
 import os
 import discord
@@ -107,41 +108,48 @@ class LimitModal(discord.ui.Modal, title='設定人數上限'):
 # ── 控制面板 View ──────────────────────────────────────────────
 
 class VoiceControlView(discord.ui.View):
-    def __init__(self, channel_id: int, owner_id: int):
+    """持久化 View：不依賴建構參數，每次互動時動態從 active 資料查詢頻道。"""
+
+    def __init__(self):
         super().__init__(timeout=None)
-        self.channel_id = channel_id
-        self.owner_id = owner_id
+
+    def _get_owned_channel(self, interaction: discord.Interaction):
+        gid = str(interaction.guild_id)
+        guild_data = _get(gid)
+        active = guild_data.get('active', {})
+        uid = str(interaction.user.id)
+        owned = [cid for cid, oid in active.items() if oid == uid]
+        if not owned:
+            return None
+        return interaction.guild.get_channel(int(owned[0]))
 
     async def interaction_check(self, interaction: discord.Interaction) -> bool:
-        if interaction.user.id != self.owner_id:
+        if not self._get_owned_channel(interaction):
             await interaction.response.send_message(
-                '❌ 只有頻道建立者才能使用此控制面板。', ephemeral=True
+                '❌ 找不到你的語音頻道，或你不是此頻道的建立者。', ephemeral=True
             )
             return False
         return True
 
-    def _get_channel(self, guild: discord.Guild):
-        return guild.get_channel(self.channel_id)
-
-    @discord.ui.button(label='改名', emoji='✏️', style=discord.ButtonStyle.primary)
+    @discord.ui.button(label='改名', emoji='✏️', style=discord.ButtonStyle.primary, custom_id='vc_rename')
     async def rename(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ch = self._get_channel(interaction.guild)
+        ch = self._get_owned_channel(interaction)
         if not ch:
             await interaction.response.send_message('❌ 找不到頻道，可能已被刪除。', ephemeral=True)
             return
         await interaction.response.send_modal(RenameModal(ch))
 
-    @discord.ui.button(label='設定人數', emoji='👥', style=discord.ButtonStyle.secondary)
+    @discord.ui.button(label='設定人數', emoji='👥', style=discord.ButtonStyle.secondary, custom_id='vc_limit')
     async def set_limit(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ch = self._get_channel(interaction.guild)
+        ch = self._get_owned_channel(interaction)
         if not ch:
             await interaction.response.send_message('❌ 找不到頻道，可能已被刪除。', ephemeral=True)
             return
         await interaction.response.send_modal(LimitModal(ch))
 
-    @discord.ui.button(label='鎖定頻道', emoji='🔒', style=discord.ButtonStyle.danger)
+    @discord.ui.button(label='鎖定頻道', emoji='🔒', style=discord.ButtonStyle.danger, custom_id='vc_lock')
     async def toggle_lock(self, interaction: discord.Interaction, button: discord.ui.Button):
-        ch = self._get_channel(interaction.guild)
+        ch = self._get_owned_channel(interaction)
         if not ch:
             await interaction.response.send_message('❌ 找不到頻道，可能已被刪除。', ephemeral=True)
             return
@@ -170,6 +178,22 @@ class VoiceControlView(discord.ui.View):
 class VoiceChannelCog(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._lock = asyncio.Lock()
+
+    # ── 啟動時清理孤立的 active 記錄 ──────────────────────────
+    @commands.Cog.listener()
+    async def on_ready(self):
+        for guild in self.bot.guilds:
+            gid = str(guild.id)
+            async with self._lock:
+                guild_data = _get(gid)
+                active = guild_data.get('active', {})
+                orphans = [cid for cid in list(active) if not guild.get_channel(int(cid))]
+                if orphans:
+                    for cid in orphans:
+                        active.pop(cid)
+                    guild_data['active'] = active
+                    _set(gid, guild_data)
 
     # ── 事件監聽 ──────────────────────────────────────────────
     @commands.Cog.listener()
@@ -187,21 +211,37 @@ class VoiceChannelCog(commands.Cog):
         if trigger_id and after.channel and str(after.channel.id) == trigger_id:
             await self._handle_join(member, guild_data, gid)
 
-        # 偵測離開自動頻道且頻道已空
+        # 偵測離開自動頻道且頻道已空（重新讀取最新資料，防止競態覆蓋）
         if before.channel:
-            active = guild_data.get('active', {})
-            bid = str(before.channel.id)
-            if bid in active and len(before.channel.members) == 0:
-                try:
-                    await before.channel.delete(reason='自動語音頻道已清空')
-                except (discord.NotFound, discord.Forbidden):
-                    pass
-                active.pop(bid, None)
-                guild_data['active'] = active
-                _set(gid, guild_data)
+            async with self._lock:
+                fresh = _get(gid)
+                active = fresh.get('active', {})
+                bid = str(before.channel.id)
+                if bid in active and len(before.channel.members) == 0:
+                    try:
+                        await before.channel.delete(reason='自動語音頻道已清空')
+                    except (discord.NotFound, discord.Forbidden):
+                        pass
+                    active.pop(bid, None)
+                    fresh['active'] = active
+                    _set(gid, fresh)
 
     async def _handle_join(self, member: discord.Member, guild_data: dict, gid: str):
         guild = member.guild
+
+        # 防止重複建立：若用戶已有活躍頻道，移回現有頻道
+        active = guild_data.get('active', {})
+        uid = str(member.id)
+        owned = [cid for cid, oid in active.items() if oid == uid]
+        if owned:
+            existing_ch = guild.get_channel(int(owned[0]))
+            if existing_ch:
+                try:
+                    await member.move_to(existing_ch, reason='已有活躍頻道，移回現有頻道')
+                    return
+                except (discord.Forbidden, discord.HTTPException):
+                    pass  # 移動失敗（例如頻道已滿），繼續建立新頻道
+
         default_name = guild_data.get('default_name', '🎮 {user}的頻道')
         default_limit = guild_data.get('default_limit', 99)
         category_id = guild_data.get('category_id')
@@ -252,8 +292,11 @@ class VoiceChannelCog(commands.Cog):
         except (discord.Forbidden, discord.HTTPException):
             return
 
-        guild_data.setdefault('active', {})[str(new_ch.id)] = str(member.id)
-        _set(gid, guild_data)
+        # 寫入 active 時重新讀取最新資料，防止並發覆蓋
+        async with self._lock:
+            fresh = _get(gid)
+            fresh.setdefault('active', {})[str(new_ch.id)] = str(member.id)
+            _set(gid, fresh)
 
     # ── /設定語音觸發頻道 ──────────────────────────────────────
     @app_commands.command(name='設定語音觸發頻道', description='設定使用者加入後自動分配新語音頻道的觸發頻道')
@@ -380,9 +423,10 @@ class VoiceChannelCog(commands.Cog):
         ch_id = int(owned[0])
         ch = interaction.guild.get_channel(ch_id)
         if not ch:
-            active.pop(str(ch_id), None)
-            guild_data['active'] = active
-            _set(gid, guild_data)
+            async with self._lock:
+                fresh = _get(gid)
+                fresh.get('active', {}).pop(str(ch_id), None)
+                _set(gid, fresh)
             await interaction.response.send_message(
                 '❌ 找不到你的語音頻道，可能已被刪除。', ephemeral=True
             )
@@ -399,8 +443,7 @@ class VoiceChannelCog(commands.Cog):
             value=f'名稱：**{ch.name}**\n人數上限：**{limit_str}**',
             inline=False,
         )
-        view = VoiceControlView(ch_id, interaction.user.id)
-        await interaction.response.send_message(embed=embed, view=view, ephemeral=True)
+        await interaction.response.send_message(embed=embed, view=VoiceControlView(), ephemeral=True)
 
 
 async def setup(bot):

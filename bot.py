@@ -81,7 +81,9 @@ async def on_tree_error(interaction: discord.Interaction, error: app_commands.Ap
 @bot.event
 async def on_ready():
     from commands.user.panel import CheckInView
+    from commands.admin.voice_channel import VoiceControlView
     bot.add_view(CheckInView())
+    bot.add_view(VoiceControlView())
 
     # 修正舊版 23:59 預設值
     db.migrate_reset_times()
